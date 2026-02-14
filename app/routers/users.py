@@ -1,10 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models import User
-from app.schemas import TokenResponse, UserLogin, UserRegister, UserResponse, UserUpdate
+from app.schemas import (
+    RefreshTokenRequest,
+    TokenResponse,
+    UserLogin,
+    UserRegister,
+    UserResponse,
+    UserUpdate,
+)
 from app.security import (
     create_access_token,
     create_refresh_token,
@@ -79,3 +88,36 @@ async def update_profile(
     await db.refresh(current_user)
 
     return current_user
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_token(token_data: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
+    try:
+        payload = jwt.decode(
+            token_data.refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
+
+        user_id = payload.get("sub")
+        token_type = payload.get("type")
+
+        if token_type != "refresh" or not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token"
+            )
+
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token"
+        )
+
+    result = await db.execute(select(User).where(User.id == int(user_id)))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token"
+        )
+
+    new_access_token = create_access_token(data={"sub": str(user.id)})
+    new_refresh_token = create_refresh_token(data={"sub": str(user.id)})
+    return TokenResponse(access_token=new_access_token, refresh_token=new_refresh_token)

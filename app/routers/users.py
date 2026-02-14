@@ -4,10 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import User
-from app.schemas import TokenResponse, UserLogin, UserRegister, UserResponse
+from app.schemas import TokenResponse, UserLogin, UserRegister, UserResponse, UserUpdate
 from app.security import (
     create_access_token,
     create_refresh_token,
+    get_current_user,
     get_password_hash,
     verify_password,
 )
@@ -54,3 +55,27 @@ async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
     refresh_token = create_refresh_token(data=payload)
 
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+
+
+@router.get("/profile", response_model=UserResponse)
+async def get_profile(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+@router.patch("/profile", response_model=UserResponse)
+# Using PATCH instead of PUT since we only update first and last name.
+async def update_profile(
+    user_data: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if user_data.first_name is not None:
+        current_user.first_name = user_data.first_name
+
+    if user_data.last_name is not None:
+        current_user.last_name = user_data.last_name
+
+    await db.flush()
+    await db.refresh(current_user)
+
+    return current_user

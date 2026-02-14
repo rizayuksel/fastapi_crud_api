@@ -4,20 +4,21 @@ from fastapi import FastAPI
 
 from app.config import settings
 from app.database import init_db
+from app.routers import users
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print(f"🚀 {settings.APP_NAME} starting...")
+    print(f"{settings.APP_NAME} starting...")
     await init_db()
-    print("✅ Database ready!")
+    print("Database ready!")
     yield
-    print("👋 Shutting down...")
+    print("Shutting down...")
 
 
 app = FastAPI(
     title=settings.APP_NAME,
-    description="FastAPI CRUD API with PostgreSQL and JWT",
+    description="Simple CRUD API with authentication",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs",
@@ -32,4 +33,7 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    return {"status": "ok", "service": settings.APP_NAME}
+
+
+app.include_router(users.router)

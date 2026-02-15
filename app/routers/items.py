@@ -19,6 +19,37 @@ from app.security import get_current_user
 router = APIRouter(prefix="/api/items", tags=["items"])
 
 
+@router.get("/analytics/category-density", response_model=CategoryDensityResponse)
+async def category_density(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    total_result = await db.execute(
+        select(func.count()).select_from(Item).where(Item.is_deleted == False)  # noqa: E712
+    )
+    total_items = total_result.scalar() or 0
+
+    if total_items == 0:
+        return CategoryDensityResponse(total_items=0, categories=[])
+
+    result = await db.execute(
+        select(Item.category, func.count(Item.id).label("count"))
+        .where(Item.is_deleted == False)  # noqa: E712
+        .group_by(Item.category)
+    )
+
+    rows = result.all()
+
+    categories = [
+        CategoryDensity(
+            category=category, count=count, percentage=round((count / total_items) * 100, 2)
+        )
+        for category, count in rows
+    ]
+
+    return CategoryDensityResponse(total_items=total_items, categories=categories)
+
+
 @router.post("", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)
 async def create_item(
     item_data: ItemCreate,
@@ -68,8 +99,10 @@ async def list_items(
     db: AsyncSession = Depends(get_db),
 ):
 
-    query = select(Item).where(not Item.is_deleted)
-    count_query = select(func.count()).select_from(Item).where(not Item.is_deleted)
+    query = select(Item).where(Item.is_deleted == False)  # noqa: E712
+    count_query = (
+        select(func.count()).select_from(Item).where(Item.is_deleted == False)  # noqa: E712
+    )
 
     if category:
         query = query.where(Item.category == category)
@@ -107,7 +140,9 @@ async def update_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Item).where(Item.id == item_id, not Item.is_deleted))
+    result = await db.execute(
+        select(Item).where(Item.id == item_id, Item.is_deleted == False)  # noqa: E712
+    )
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -128,34 +163,3 @@ async def update_item(
     await db.refresh(item)
 
     return item
-
-
-@router.get("/analytics/category-density", response_model=CategoryDensityResponse)
-async def category_density(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    total_result = await db.execute(
-        select(func.count()).select_from(Item).where(not Item.is_deleted)
-    )
-    total_items = total_result.scalar() or 0
-
-    if total_items == 0:
-        return CategoryDensityResponse(total_items=0, categories=[])
-
-    result = await db.execute(
-        select(Item.category, func.count(Item.id).label("count"))
-        .where(not Item.is_deleted)
-        .group_by(Item.category)
-    )
-
-    rows = result.all()
-
-    categories = [
-        CategoryDensity(
-            category=category, count=count, percentage=round((count / total_items) * 100, 2)
-        )
-        for category, count in rows
-    ]
-
-    return CategoryDensityResponse(total_items=total_items, categories=categories)

@@ -54,3 +54,30 @@ class TokenResponse(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+
+class ItemCreate(BaseModel):
+    name: str = Field(..., min_length=3, max_length=255)
+    description: Optional[str] = None
+    category: str = Field(..., min_length=2, max_length=100)
+    status: Optional[str] = Field("active", max_length=50)
+
+
+class ItemUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=3, max_length=255)
+    description: Optional[str] = None
+    category: Optional[str] = Field(None, min_length=2, max_length=100)
+    status: Optional[str] = Field(None, max_length=50)
+
+
+class ItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    description: Optional[str]
+    category: str
+    status: str
+    is_deleted: bool
+    created_at: datetime
+    updated_at: Optional[datetime]

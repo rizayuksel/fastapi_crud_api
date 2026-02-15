@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from app.exceptions import AppException
 
 # Just a basic logger to track the mess
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("app")
 
 
 def add_exception_handlers(app):

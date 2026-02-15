@@ -5,16 +5,19 @@ from fastapi import FastAPI
 from app.config import settings
 from app.database import init_db
 from app.errors import add_exception_handlers
+from app.logging_config import setup_logging
 from app.routers import items, users
+
+logger = setup_logging()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print(f"{settings.APP_NAME} starting...")
+    logger.info(f"Starting {settings.APP_NAME}...")
     await init_db()
-    print("Database ready!")
+    logger.info("Database initialized")
     yield
-    print("Shutting down...")
+    logger.info("Shutting down...")
 
 
 app = FastAPI(

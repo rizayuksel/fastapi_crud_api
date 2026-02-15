@@ -1,7 +1,10 @@
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(env_file=".env", case_sensitive=True)
+
     DATABASE_URL: str
 
     SECRET_KEY: str
@@ -11,10 +14,6 @@ class Settings(BaseSettings):
 
     APP_NAME: str = "FastAPI CRUD API"
     DEBUG: bool = True
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
 
 
 settings = Settings()

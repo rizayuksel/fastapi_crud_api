@@ -1,10 +1,11 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.exceptions import ResourceNotFoundError
 from app.models import Item, User
 from app.schemas import (
     CategoryDensity,
@@ -19,11 +20,19 @@ from app.security import get_current_user
 router = APIRouter(prefix="/api/items", tags=["items"])
 
 
+# A simple helper to keep the routes clean
+def verify_item(item, item_id):
+    if not item:
+        raise ResourceNotFoundError(resource="Item", identifier=item_id)
+    return item
+
+
 @router.get("/analytics/category-density", response_model=CategoryDensityResponse)
 async def category_density(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # E712 is just flake8 being picky about '== False'
     total_result = await db.execute(
         select(func.count()).select_from(Item).where(Item.is_deleted == False)  # noqa: E712
     )
@@ -42,7 +51,9 @@ async def category_density(
 
     categories = [
         CategoryDensity(
-            category=category, count=count, percentage=round((count / total_items) * 100, 2)
+            category=category,
+            count=count,
+            percentage=round((count / total_items) * 100, 2),
         )
         for category, count in rows
     ]
@@ -50,13 +61,12 @@ async def category_density(
     return CategoryDensityResponse(total_items=total_items, categories=categories)
 
 
-@router.post("", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ItemResponse, status_code=201)
 async def create_item(
     item_data: ItemCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-
     new_item = Item(
         name=item_data.name,
         description=item_data.description,
@@ -71,20 +81,18 @@ async def create_item(
     return new_item
 
 
-def verify_item(item):
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found.")
-
-
 @router.get("/{item_id}", response_model=ItemResponse)
 async def get_item(
-    item_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    item_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Item).where(Item.id == item_id, not Item.is_deleted))
+    result = await db.execute(
+        select(Item).where(Item.id == item_id, Item.is_deleted == False)  # noqa: E712
+    )
     item = result.scalar_one_or_none()
 
-    verify_item(item)
-
+    verify_item(item, item_id)
     return item
 
 
@@ -94,11 +102,10 @@ async def list_items(
     per_page: int = Query(5, ge=1, le=20),
     category: Optional[str] = Query(None),
     sort_by: Optional[str] = Query("created_at"),
-    order: str = Query("desc", regex="^(asc|desc)$"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),  # regex deprecated, using pattern
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-
     query = select(Item).where(Item.is_deleted == False)  # noqa: E712
     count_query = (
         select(func.count()).select_from(Item).where(Item.is_deleted == False)  # noqa: E712
@@ -111,6 +118,7 @@ async def list_items(
     total_result = await db.execute(count_query)
     total = total_result.scalar()
 
+    # Only allow sorting by specific fields
     allowed_sort_fields = {
         "created_at": Item.created_at,
         "name": Item.name,
@@ -120,16 +128,19 @@ async def list_items(
     sort_column = allowed_sort_fields.get(sort_by, Item.created_at)
     query = query.order_by(sort_column.desc() if order == "desc" else sort_column.asc())
 
+    # Pagination stuff
     offset = (page - 1) * per_page
     query = query.offset(offset).limit(per_page)
 
     result = await db.execute(query)
     items = result.scalars().all()
 
-    total_pages = (total + per_page - 1) // per_page
-
     return ItemListResponse(
-        items=items, total=total, page=page, per_page=per_page, pages=total_pages
+        items=items,
+        total=total,
+        page=page,
+        per_page=per_page,
+        pages=(total + per_page - 1) // per_page,
     )
 
 
@@ -144,22 +155,32 @@ async def update_item(
         select(Item).where(Item.id == item_id, Item.is_deleted == False)  # noqa: E712
     )
     item = result.scalar_one_or_none()
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
 
-    if data.name is not None:
-        item.name = data.name
+    verify_item(item, item_id)
 
-    if data.description is not None:
-        item.description = data.description
-
-    if data.category is not None:
-        item.category = data.category
-
-    if data.status is not None:
-        item.status = data.status
+    # Let's do this the smart way instead of 100 'if' statements
+    update_info = data.model_dump(exclude_unset=True)
+    for key, value in update_info.items():
+        setattr(item, key, value)
 
     await db.flush()
     await db.refresh(item)
-
     return item
+
+
+@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_item(
+    item_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Just a soft delete, we're not monsters who destroy data permanently
+    result = await db.execute(
+        select(Item).where(Item.id == item_id, Item.is_deleted == False)  # noqa: E712
+    )
+    item = result.scalar_one_or_none()
+
+    verify_item(item, item_id)
+
+    item.is_deleted = True
+    await db.flush()

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   db:
@@ -35,11 +33,13 @@ services:
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS}
       APP_NAME: ${APP_NAME}
       DEBUG: ${DEBUG}
+      PYTHONPATH: /app
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - ./app:/app/app
+      - ./scripts:/app/scripts
     networks:
       - app-network
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

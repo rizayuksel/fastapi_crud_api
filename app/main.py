@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from app.config import settings
 from app.database import init_db
+from app.errors import add_exception_handlers
 from app.routers import items, users
 
 
@@ -24,6 +25,8 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+add_exception_handlers(app)
 
 
 @app.get("/")

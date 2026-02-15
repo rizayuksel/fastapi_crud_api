@@ -35,9 +35,12 @@ class TestUserRegister:
                 "last_name": "User",
             },
         )
-
         assert response.status_code == 400
-        assert "already" in response.json()["detail"].lower()
+
+        data = response.json()
+        assert data["success"] is False
+        assert "already" in data["error"]["message"].lower()
+        assert data["error"]["code"] == "EMAIL_TAKEN"
 
     async def test_invalid_email_returns_validation_error(self, client):
         response = await client.post(
@@ -89,14 +92,18 @@ class TestUserLogin:
         )
 
         assert response.status_code == 401
-        assert "incorrect" in response.json()["detail"].lower()
+        data = response.json()
+        assert data["success"] is False
+        assert "incorrect" in data["error"]["message"].lower()
 
         response = await client.post(
             "/api/users/login", json={"email": "nonexistent@example.com", "password": "Test1234"}
         )
 
         assert response.status_code == 401
-        assert "incorrect" in response.json()["detail"].lower()
+        data = response.json()
+        assert data["success"] is False
+        assert "incorrect" in data["error"]["message"].lower()
 
 
 @pytest.mark.asyncio

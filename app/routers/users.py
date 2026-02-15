@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.exceptions import AppException, AuthenticationError
 from app.models import User
 from app.schemas import (
     RefreshTokenRequest,
@@ -25,45 +26,43 @@ from app.security import (
 router = APIRouter(prefix="/api/users", tags=["users"])
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == user_data.email))
-    existing_user = result.scalar_one_or_none()
+@router.post("/register", response_model=UserResponse, status_code=201)
+async def register_user(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
+    # Check if email is already taken
+    existing = await db.execute(select(User).where(User.email == user_data.email))
+    if existing.scalar_one_or_none():
+        raise AppException(message="Email already registered", status_code=400, code="EMAIL_TAKEN")
 
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
-        )
-
-    new_user = User(
+    user = User(
         email=user_data.email,
         hashed_password=get_password_hash(user_data.password),
         first_name=user_data.first_name,
         last_name=user_data.last_name,
     )
 
-    db.add(new_user)
+    db.add(user)
     await db.flush()
-    await db.refresh(new_user)
+    await db.refresh(user)
 
-    return new_user
+    return user
 
 
-@router.post("/login", response_model=TokenResponse, status_code=status.HTTP_200_OK)
-async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == user_data.email))
+@router.post("/login", response_model=TokenResponse)
+async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.email == credentials.email))
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(user_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password"
-        )
+    # If user doesn't exist or password is wrong...
+    if not user or not verify_password(credentials.password, user.hashed_password):
+        raise AuthenticationError(message="Incorrect email or password")
 
+    # Keeping it standard with 'sub'
     payload = {"sub": str(user.id)}
-    access_token = create_access_token(data=payload)
-    refresh_token = create_refresh_token(data=payload)
 
-    return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+    return TokenResponse(
+        access_token=create_access_token(data=payload),
+        refresh_token=create_refresh_token(data=payload),
+    )
 
 
 @router.get("/profile", response_model=UserResponse)
@@ -72,17 +71,15 @@ async def get_profile(current_user: User = Depends(get_current_user)):
 
 
 @router.patch("/profile", response_model=UserResponse)
-# Using PATCH instead of PUT since we only update first and last name.
 async def update_profile(
     user_data: UserUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if user_data.first_name is not None:
-        current_user.first_name = user_data.first_name
-
-    if user_data.last_name is not None:
-        current_user.last_name = user_data.last_name
+    # Dynamic update is cleaner than a bunch of if statements
+    update_data = user_data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(current_user, key, value)
 
     await db.flush()
     await db.refresh(current_user)
@@ -96,28 +93,24 @@ async def refresh_token(token_data: RefreshTokenRequest, db: AsyncSession = Depe
         payload = jwt.decode(
             token_data.refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
-
         user_id = payload.get("sub")
         token_type = payload.get("type")
 
         if token_type != "refresh" or not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token"
-            )
+            raise AuthenticationError(message="Invalid refresh token")
 
     except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token"
-        )
+        raise AuthenticationError(message="Invalid or expired refresh token")
 
+    # Re-verify user still exists
     result = await db.execute(select(User).where(User.id == int(user_id)))
     user = result.scalar_one_or_none()
 
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token"
-        )
+        raise AuthenticationError(message="Invalid refresh token")
 
-    new_access_token = create_access_token(data={"sub": str(user.id)})
-    new_refresh_token = create_refresh_token(data={"sub": str(user.id)})
-    return TokenResponse(access_token=new_access_token, refresh_token=new_refresh_token)
+    new_payload = {"sub": str(user.id)}
+    return TokenResponse(
+        access_token=create_access_token(data=new_payload),
+        refresh_token=create_refresh_token(data=new_payload),
+    )

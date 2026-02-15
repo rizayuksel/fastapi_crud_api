@@ -32,7 +32,12 @@ async def test_db():
 @pytest_asyncio.fixture(scope="function")
 async def client(test_db):
     async def override_get_db():
-        yield test_db
+        try:
+            yield test_db
+            await test_db.commit()
+        except Exception:
+            await test_db.rollback()
+            raise
 
     app.dependency_overrides[get_db] = override_get_db
 
@@ -54,3 +59,28 @@ async def test_user(test_db):
     await test_db.commit()
     await test_db.refresh(user)
     return user
+
+
+@pytest_asyncio.fixture(scope="function")
+async def auth_token(client, test_user):
+    response = await client.post(
+        "/api/users/login", json={"email": test_user.email, "password": "Test1234"}
+    )
+    return response.json()["access_token"]
+
+
+@pytest_asyncio.fixture(scope="function")
+async def test_item(test_db):
+    from app.models import Item
+
+    item = Item(
+        name="Test iPhone",
+        description="Test Description",
+        category="electronics",
+        status="active",
+        is_deleted=False,
+    )
+    test_db.add(item)
+    await test_db.commit()
+    await test_db.refresh(item)
+    return item

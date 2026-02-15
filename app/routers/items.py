@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.cache import delete_cache, get_cache, set_cache
 from app.database import get_db
 from app.exceptions import ResourceNotFoundError
 from app.models import Item, User
@@ -32,7 +33,14 @@ async def category_density(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # E712 is just flake8 being picky about '== False'
+    # Try cache first
+    cache_key = "analytics:category-density"
+    cached = await get_cache(cache_key)
+
+    if cached:
+        return CategoryDensityResponse(**cached)
+
+    # Cache miss - calculate from DB
     total_result = await db.execute(
         select(func.count()).select_from(Item).where(Item.is_deleted == False)  # noqa: E712
     )
@@ -41,6 +49,7 @@ async def category_density(
     if total_items == 0:
         return CategoryDensityResponse(total_items=0, categories=[])
 
+    # E712 is just flake8 being picky about '== False'
     result = await db.execute(
         select(Item.category, func.count(Item.id).label("count"))
         .where(Item.is_deleted == False)  # noqa: E712
@@ -58,7 +67,12 @@ async def category_density(
         for category, count in rows
     ]
 
-    return CategoryDensityResponse(total_items=total_items, categories=categories)
+    response_data = CategoryDensityResponse(total_items=total_items, categories=categories)
+
+    # Save to cache (5 minutes)
+    await set_cache(cache_key, response_data.model_dump(), expire=300)
+
+    return response_data
 
 
 @router.post("", response_model=ItemResponse, status_code=201)
@@ -77,6 +91,9 @@ async def create_item(
     db.add(new_item)
     await db.flush()
     await db.refresh(new_item)
+
+    # Invalidate analytics cache
+    await delete_cache("analytics:*")
 
     return new_item
 
@@ -184,3 +201,6 @@ async def delete_item(
 
     item.is_deleted = True
     await db.flush()
+
+    # Invalidate analytics cache
+    await delete_cache("analytics:*")

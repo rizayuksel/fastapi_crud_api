@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     APP_NAME: str = "FastAPI CRUD API"
     DEBUG: bool = True
+    REDIS_URL: str = "redis://redis:6379"
 
 
 settings = Settings()

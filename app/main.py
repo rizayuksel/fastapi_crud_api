@@ -4,7 +4,7 @@ from fastapi import FastAPI
 
 from app.config import settings
 from app.database import init_db
-from app.routers import users
+from app.routers import items, users
 
 
 @asynccontextmanager
@@ -37,3 +37,4 @@ async def health_check():
 
 
 app.include_router(users.router)
+app.include_router(items.router)

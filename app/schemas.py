@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -57,6 +57,8 @@ class RefreshTokenRequest(BaseModel):
 
 
 class ItemCreate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     name: str = Field(..., min_length=3, max_length=255)
     description: Optional[str] = None
     category: str = Field(..., min_length=2, max_length=100)
@@ -81,3 +83,22 @@ class ItemResponse(BaseModel):
     is_deleted: bool
     created_at: datetime
     updated_at: Optional[datetime]
+
+
+class ItemListResponse(BaseModel):
+    items: List[ItemResponse]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+
+
+class CategoryDensity(BaseModel):
+    category: str
+    count: int
+    percentage: float
+
+
+class CategoryDensityResponse(BaseModel):
+    total_items: int
+    categories: list[CategoryDensity]

@@ -172,25 +172,24 @@ docker compose exec api pytest app/tests/ --cov=app --cov-report=term-missing
 
 <details>
 <summary>📊 Detailed Coverage Report</summary>
-```
-Name                      Stmts   Miss  Cover
----------------------------------------------
-app/cache.py                 35      5    86%
-app/config.py                13      0   100%
-app/database.py              18     10    44%
-app/errors.py                14      2    86%
-app/exceptions.py            12      0   100%
-app/logging_config.py         7      0   100%
-app/main.py                  25      7    72%
-app/models.py                32      2    94%
-app/routers/items.py         81     35    57%
-app/routers/users.py         56     19    66%
-app/schemas.py               75      4    95%
-app/security.py              47      8    83%
-app/tests/conftest.py        51      6    88%
----------------------------------------------
-TOTAL                       690    119    83%
-```
+
+| File | Statements | Missed | Coverage |
+|------|------------|--------|----------|
+| app/cache.py | 35 | 5 | 86% |
+| app/config.py | 13 | 0 | 100% |
+| app/database.py | 18 | 10 | 44% |
+| app/errors.py | 14 | 2 | 86% |
+| app/exceptions.py | 12 | 0 | 100% |
+| app/logging_config.py | 7 | 0 | 100% |
+| app/main.py | 25 | 7 | 72% |
+| app/models.py | 32 | 2 | 94% |
+| app/routers/items.py | 81 | 35 | 57% |
+| app/routers/users.py | 56 | 19 | 66% |
+| app/schemas.py | 75 | 4 | 95% |
+| app/security.py | 47 | 8 | 83% |
+| app/tests/conftest.py | 51 | 6 | 88% |
+| **TOTAL** | **690** | **119** | **83%** |
+
 </details>
 
 ## 📁 Project Structure
